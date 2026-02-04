@@ -1,0 +1,34 @@
+---
+alwaysApply: true
+---
+Critical invariants for the PostgreSQL schema, sharding, and hierarchical data structures. globs: ["src/db/", "migrations/", "*.sql", "src/schema/**"]
+Database Invariants (Non-Negotiable)
+1. Workspace-First Sharding
+Rule: Every table MUST include a workspace_id UUID column.
+
+Primary Keys: All primary keys MUST be composite, following the format: PRIMARY KEY (workspace_id, id).
+
+Rationale: This ensures 10x scalability by allowing data to be partitioned by workspace across physical shards .
+
+2. Hierarchical Pathing (LTREE)
+Rule: Do NOT use recursive CTEs or deep JSON nesting for document structure.
+
+Requirement: Every hierarchical entity (Page, Block, Folder) must have a path column of type ltree and a parent_id for adjacency .
+
+Indexing: Every path column must have a GiST index: CREATE INDEX idx_path ON entities USING GIST (path).
+
+3. History & State (Merkle-DAG)
+Rule: Content columns are APPEND-ONLY.
+
+Invariants:
+
+The entities table stores the latest "pointer."
+
+The commits table stores immutable snapshots/deltas linked in a Merkle-DAG.
+
+No UPDATE statements should ever modify historical content; only new commits are inserted .
+
+4. Extensible Metadata
+Rule: Use JSONB for the properties column to support the "Everything is an Entity" philosophy.
+
+Constraint: Properties must handle arbitrary user-defined metadata (e.g., to-do status, image dimensions, custom attributes) .
