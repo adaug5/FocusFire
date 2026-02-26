@@ -1,0 +1,19 @@
+{
+  "name": "@focusfire/focusdoc-engine",
+  "version": "0.1.0",
+  "description": "UI-agnostic FocusDoc engine: git, markdown, draft-manager.",
+  "type": "module",
+  "main": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {},
+  "dependencies": {
+    "@isomorphic-git/lightning-fs": "^4.6.2",
+    "gray-matter": "^4.0.3",
+    "isomorphic-git": "^1.26.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {},
+  "engines": {}
+}

@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+---
+description: Standards for error handling and data safety in the FocusDoc engine.
+globs: packages/focusdoc-engine/**/*
+---
+
+# Data Safety & Error Standards
+
+1. **Atomic Operations:** Every Git operation must be wrapped in a try/catch block. If a commit fails, the engine must revert to the last known "clean" state in memory.
+2. **The "Last Stand" Log:** If IndexedDB fails, the engine must attempt to dump the current draft content to `console.error` or a secondary `localStorage` key so the user can manually copy their work.
+3. **Integrity Checks:** Before every `commit`, verify the Markdown structure. If the YAML frontmatter is corrupted, prevent the commit and throw a specific `CorruptedMetadataError`.
