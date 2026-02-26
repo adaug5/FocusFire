@@ -1,0 +1,23 @@
+---
+alwaysApply: true
+---
+---
+description: Rules for managing Markdown content and PostgreSQL metadata synchronization.
+globs: src/db/**/*, src/editor/converters/**/*
+---
+
+# Data & Metadata Schema
+
+## The Source of Truth
+- The `.md` file in the Git repository is the absolute source of truth.
+- All properties (Status, Author, Custom Tags) must live in the YAML Frontmatter.
+
+## Database Mirroring (PostgreSQL)
+- When a commit is finalized, the system must parse the YAML Frontmatter.
+- The PostgreSQL database should be updated to match the frontmatter of the *latest* commit on the `main` branch.
+- Database entries are for **Search and Filtering only**. Business logic should rely on the Git state.
+
+## Media Handling
+- Images must NOT be stored as binary blobs in Git.
+- Use Content-Addressable Storage (CAS). Store images in S3 with a SHA-256 hash as the filename.
+- Markdown references must use the hash: `![alt text](hash://a1b2c3d4...)`.

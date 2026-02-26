@@ -1,0 +1,40 @@
+---
+alwaysApply: true
+---
+---
+description: Universal principles for Modular Architecture, Decoupling, and Package Boundaries across the FocusFire ecosystem.
+globs: **/*
+---
+
+# FocusFire Architecture Standard: Modular Decoupling
+
+To ensure FocusFire remains a scalable platform, every module (like FocusDoc) must be treated as a standalone "Package." We strictly enforce a **Layered Architecture** to prevent "Spaghetti Code."
+
+## 1. The Package Layer (`packages/[module]-engine/`)
+- **Role:** The "Independent Brain." This contains the core logic, state management, and external service integrations (e.g., Git, specialized parsers).
+- **Hard Constraint:** Packages must be **UI-Agnostic**. They cannot import from `src/` or depend on any specific UI framework.
+- **Contract:** Every package must expose a clean, typed "Public API" via an `index.ts` file. 
+- **Portability:** A package should be able to be lifted out of this project and dropped into a completely different interface (Mobile, CLI, Desktop) without modification.
+
+## 2. The Adapter Layer (`src/hooks/` or `src/services/`)
+- **Role:** The "Translator." This layer bridges the gap between a generic Package and the specific Application.
+- **Responsibility:** - Translating Package methods into framework-specific state (e.g., React Hooks).
+    - Handling side effects like browser-specific notifications or routing.
+- **Benefit:** If we ever switch UI frameworks (e.g., React to Vue), we only rewrite the Adapters, never the Engines.
+
+## 3. The Interface Layer (`src/components/` and `src/pages/`)
+- **Role:** The "Visual Skin." This is where the user interacts with the system.
+- **Rule of Isolation:** UI components must never talk directly to the low-level logic (e.g., Isomorphic-Git). They only interact with the **Adapter Layer**.
+- **Context:** Components should be "dumb" regarding *how* data is saved; they only care *that* it is saved.
+
+## 4. The Data Mirror Layer (`src/api/` or `packages/focusfire-db/`)
+- **Role:** The "Secondary Index."
+- **Source of Truth Rule:** The file system/Git history is the absolute source of truth. The database is a *projection* of that data for performance (search/filtering).
+- **Sync Pattern:** All database updates must be triggered by events from the Engine to ensure the mirror never drifts from the source.
+
+
+
+## Implementation Checklist for Cursor:
+1. "Does this logic belong in the Engine or the UI?" 
+2. "If I deleted the `src/` folder, would the `packages/` logic still function?" (It should).
+3. "Am I importing a UI-specific library inside a Package?" (Never do this).

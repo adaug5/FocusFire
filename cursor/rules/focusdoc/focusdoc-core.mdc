@@ -1,0 +1,24 @@
+---
+alwaysApply: true
+---
+
+---
+description: Global context and naming conventions for the FocusDoc project.
+globs: **/*
+---
+
+# FocusDoc: The Atomic Building Block
+
+- **Project Name:** FocusDoc.
+- **Role:** FocusDoc is a modular, Git-backed document engine. It serves as the foundational unit for the broader "FocusFire" ecosystem.
+- **Philosophy:** "Git Power, Word Grace." The complexity of versioning must be abstracted into a seamless, high-end writing experience.
+
+## Core Pillars
+1. **Git-as-Infrastructure:** Use Git (Isomorphic-Git) for all history, branching, and state.
+2. **Local-First:** The browser's IndexedDB is the primary workspace; the cloud is the secondary mirror.
+3. **Prose-First UX:** Features like "Shadow Drafts" and "AI-Commits" must feel like a modern word processor, not a developer tool.
+4. **Markdown Truth:** The absolute source of truth is a `.md` file with YAML Frontmatter.
+
+## Naming & Brand
+- Avoid "Repo," "Commit," or "Merge" in the primary UI. Use "Thread," "Save Version," and "Combine Changes."
+- Logic belongs in `packages/focusdoc-engine/`. UI belongs in `src/`.

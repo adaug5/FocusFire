@@ -1,0 +1,24 @@
+---
+alwaysApply: true
+---
+---
+description: Rules for handling Git operations, branching, and the shadow draft state.
+globs: src/git/**/*, src/state/**/*
+---
+
+# Git & Branching Logic
+
+## Shadow Draft State
+- Every active session must check out a branch named `draft/{user-id}`.
+- Perform a `git commit --amend` to this branch every 30s of inactivity or on window blur.
+- When the user clicks "Commit," the draft branch must be **squashed** into a single commit on the parent branch.
+
+## Branch Ownership & Merging
+- Every branch has an `Owner` metadata property.
+- Only the `Owner` can merge into their branch.
+- "Peeking" another branch should NOT switch the main editor state; it should trigger a side-by-side Diff View.
+
+## Undo/Redo
+- `Cmd+Z` should only operate on the current editing session's memory.
+- Once a commit is made, the local undo stack is cleared.
+- Rolling back further requires a Git `revert` or `checkout` via the Version Tree UI.
