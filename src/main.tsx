@@ -1,11 +1,16 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import ReactDOM from 'react-dom/client'
 import { DraftManager } from '../packages/focusdoc-engine'
 import { Buffer } from 'buffer';
 (window as any).Buffer = Buffer;
 
 const App = () => {
+  const initStarted = useRef(false);
+
   useEffect(() => {
+    if (initStarted.current) return;
+    initStarted.current = true;
+
     const initEngine = async () => {
       try {
         console.log("Initializing FocusDoc Engine...");
@@ -14,9 +19,10 @@ const App = () => {
 
         (window as any).focusDoc = draftManager;
 
-        console.log("✅ Engine Initialized! Try: await focusDoc.updateDraft('# Hello', { title: 'My Doc' }); await focusDoc.finalizeCommit('First release');");
+        console.log("✅ Engine Initialized! Try: await focusDoc.updateDraft('# Hello', { title: 'My Doc' }); await focusDoc.finalizeCommit('First release'); await focusDoc.getRefs(); focusDoc.getFsAndDir().fs.promises.readdir('/refs/heads');");
       } catch (err) {
         console.error("❌ Engine failed to start:", err);
+        initStarted.current = false;
       }
     };
 

@@ -106,6 +106,7 @@ export class DraftManager {
         object: mainOid,
         checkout: true,
       });
+
       const { commit: mainCommit } = await git.readCommit({ fs, dir, oid: mainOid });
       await git.commit({
         fs,
@@ -117,6 +118,7 @@ export class DraftManager {
         author: DEFAULT_AUTHOR,
         committer: DEFAULT_AUTHOR,
       });
+      await fs.promises.flush();
     } else {
       await git.checkout({ fs, dir, ref: DRAFT_BRANCH });
       const draftOid = await git.resolveRef({ fs, dir, ref: DRAFT_REF });
@@ -124,6 +126,7 @@ export class DraftManager {
       const draftParent = draftCommit.parent?.[0];
       if (draftParent !== mainOid) {
         await git.writeRef({ fs, dir, ref: DRAFT_REF, value: mainOid, force: true });
+        await fs.promises.flush();
         await git.checkout({ fs, dir, ref: DRAFT_BRANCH });
         const { commit: mainCommit } = await git.readCommit({ fs, dir, oid: mainOid });
         await git.commit({
@@ -136,6 +139,7 @@ export class DraftManager {
           author: DEFAULT_AUTHOR,
           committer: DEFAULT_AUTHOR,
         });
+        await fs.promises.flush();
       }
     }
 
@@ -211,9 +215,34 @@ export class DraftManager {
       value: newOid,
       force: true,
     });
+    await fs.promises.flush();
     await git.checkout({ fs, dir, ref: DRAFT_BRANCH });
 
     return newOid;
+  }
+
+  /**
+   * Returns the underlying fs and dir for debugging/inspection (e.g. reading refs/heads in IndexedDB).
+   * Call ensureDraftReady() first so the repo is initialized.
+   */
+  getFsAndDir(): ReturnType<GitRepository["getFsAndDir"]> {
+    return this.#repo.getFsAndDir();
+  }
+
+  /**
+   * Debug: returns current branch names and SHAs for main and draft using listBranches and resolveRef.
+   * Ensures draft is ready first so refs exist.
+   */
+  async getRefs(): Promise<{ branches: string[]; main: string; draft?: string }> {
+    await this.ensureDraftReady();
+    const { fs, dir } = this.#repo.getFsAndDir();
+    const branches = await git.listBranches({ fs, dir });
+    const main = await git.resolveRef({ fs, dir, ref: MAIN_REF });
+    let draft: string | undefined;
+    if (branches.includes(DRAFT_BRANCH)) {
+      draft = await git.resolveRef({ fs, dir, ref: DRAFT_REF });
+    }
+    return { branches, main, draft };
   }
 
   /**
