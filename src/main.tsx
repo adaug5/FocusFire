@@ -1,23 +1,20 @@
 import React, { useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
-// Import your engine - the path might need adjusting based on your exact structure
-import { GitRepository } from '../packages/focusdoc-engine/git/repository'
+import { DraftManager } from '../packages/focusdoc-engine'
 import { Buffer } from 'buffer';
 (window as any).Buffer = Buffer;
 
 const App = () => {
   useEffect(() => {
-    // This function runs once when the page loads
     const initEngine = async () => {
       try {
         console.log("Initializing FocusDoc Engine...");
-        const repo = new GitRepository("test-doc-123");
-        await repo.initialize();
-        
-        // Expose it to the window so we can play with it in the console
-        (window as any).focusDoc = repo;
-        
-        console.log("✅ Engine Initialized! Check IndexedDB now.");
+        const draftManager = DraftManager.getInstance("test-doc-123");
+        await draftManager.ensureDraftReady();
+
+        (window as any).focusDoc = draftManager;
+
+        console.log("✅ Engine Initialized! Try: await focusDoc.updateDraft('# Hello', { title: 'My Doc' }); await focusDoc.finalizeCommit('First release');");
       } catch (err) {
         console.error("❌ Engine failed to start:", err);
       }

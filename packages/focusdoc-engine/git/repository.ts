@@ -5,6 +5,7 @@
 
 import git from "isomorphic-git";
 import FS from "@isomorphic-git/lightning-fs";
+import { stringifyDocument } from "../markdown";
 
 const WORKING_DIR = "/";
 export const CONTENT_FILE = "content.md";
@@ -53,9 +54,17 @@ export class GitRepository {
 
   /**
    * Writes content to the tracked file, stages it, and commits to main.
+   * When metadata is provided, the file is written as YAML frontmatter + content via stringifyDocument.
+   * @param content - Markdown body (when metadata is provided, this is the content after frontmatter)
+   * @param message - Commit message
+   * @param metadata - Optional frontmatter; when present, content is serialized with stringifyDocument(metadata, content)
    * @returns The commit SHA of the new commit.
    */
-  async saveSnapshot(content: string, message: string): Promise<string> {
+  async saveSnapshot(
+    content: string,
+    message: string,
+    metadata?: Record<string, unknown>
+  ): Promise<string> {
     if (!this.#fs) {
       throw new Error("GitRepository not initialized; call initialize() first.");
     }
@@ -64,7 +73,12 @@ export class GitRepository {
     const dir = this.#dir;
     const filePath = `${dir}${CONTENT_FILE}`;
 
-    await fs.promises.writeFile(filePath, content, { encoding: "utf8" });
+    const contentToWrite =
+      metadata !== undefined && metadata !== null
+        ? stringifyDocument(metadata, content)
+        : content;
+
+    await fs.promises.writeFile(filePath, contentToWrite, { encoding: "utf8", mode: 0o666 });
     await git.add({ fs, dir, filepath: CONTENT_FILE });
     const sha = await git.commit({
       fs,
