@@ -12,6 +12,17 @@ const DRAFT_BRANCH = "draft";
 const MAIN_REF = "refs/heads/main";
 const DRAFT_REF = "refs/heads/draft";
 
+/** Standard event names for DraftManager Pub/Sub. */
+export const DraftManagerEvents = {
+  saved: "saved",
+  finalized: "finalized",
+  threadSwitched: "threadSwitched",
+  conflict: "conflict",
+  resolved: "resolved",
+} as const;
+
+export type DraftManagerEventName = (typeof DraftManagerEvents)[keyof typeof DraftManagerEvents];
+
 /** One DraftManager instance per documentId (singleton per document). */
 const instancesByDocumentId = new Map<string, DraftManager>();
 
@@ -35,6 +46,7 @@ export class DraftManager {
   readonly #documentId: string;
   #draftReady = false;
   #currentThread: string = "main";
+  readonly #listeners = new Map<string, Set<(...args: any[]) => void>>();
 
   private constructor(documentId: string) {
     this.#documentId = documentId;
@@ -54,11 +66,51 @@ export class DraftManager {
   }
 
   /**
-   * Debug only: access the underlying GitRepository (e.g. in console).
+   * Removes the singleton instance for this documentId (e.g. when the document is deleted).
+   * Call before dropping the document's IndexedDB so no stale in-memory reference remains.
+   */
+  static removeInstance(documentId: string): void {
+    instancesByDocumentId.delete(documentId);
+    initPromisesByDocumentId.delete(documentId);
+  }
+
+  /**
    * Prefer using createThread, switchThread, and getThreads for branch operations.
    */
   get repo(): GitRepository {
     return this.#repo;
+  }
+
+  /**
+   * Subscribe to an event. Use the same callback reference in off() to unsubscribe.
+   */
+  on(event: string, callback: (...args: any[]) => void): void {
+    let set = this.#listeners.get(event);
+    if (!set) {
+      set = new Set();
+      this.#listeners.set(event, set);
+    }
+    set.add(callback);
+  }
+
+  /**
+   * Unsubscribe a previously registered callback for an event.
+   */
+  off(event: string, callback: (...args: any[]) => void): void {
+    const set = this.#listeners.get(event);
+    if (set) set.delete(callback);
+  }
+
+  #emit(event: string, ...args: any[]): void {
+    const set = this.#listeners.get(event);
+    if (!set) return;
+    for (const cb of set) {
+      try {
+        cb(...args);
+      } catch (_) {
+        // One subscriber must not break others; ignore per-callback errors.
+      }
+    }
   }
 
   /**
@@ -83,28 +135,25 @@ export class DraftManager {
     await this.#repo.initialize();
     const { fs, dir } = this.#repo.getFsAndDir();
 
-    // Ensure main has at least one commit; only create Initial commit if no commit exists yet
+    // Ensure main has at least one commit; if repo is empty, create baseline with default content.md
     let mainOid: string;
     try {
       mainOid = await git.resolveRef({ fs, dir, ref: MAIN_REF });
     } catch {
-      try {
-        mainOid = await git.resolveRef({ fs, dir, ref: MAIN_REF });
-      } catch {
-        await fs.promises.writeFile(`${dir}${CONTENT_FILE}`, "", {
-          encoding: "utf8",
-          mode: 0o666,
-        });
-        await git.add({ fs, dir, filepath: CONTENT_FILE });
-        mainOid = await git.commit({
-          fs,
-          dir,
-          message: "Initial commit",
-          ref: MAIN_REF,
-          author: DEFAULT_AUTHOR,
-          committer: DEFAULT_AUTHOR,
-        });
-      }
+      const defaultContent = stringifyDocument({}, "# New Document\n");
+      await fs.promises.writeFile(`${dir}${CONTENT_FILE}`, defaultContent, {
+        encoding: "utf8",
+        mode: 0o666,
+      });
+      await git.add({ fs, dir, filepath: CONTENT_FILE });
+      mainOid = await git.commit({
+        fs,
+        dir,
+        message: "Initialize document",
+        ref: MAIN_REF,
+        author: DEFAULT_AUTHOR,
+        committer: DEFAULT_AUTHOR,
+      });
     }
 
     const branches = await git.listBranches({ fs, dir });
@@ -183,6 +232,7 @@ export class DraftManager {
       author: DEFAULT_AUTHOR,
       committer: DEFAULT_AUTHOR,
     });
+    this.#emit(DraftManagerEvents.saved);
   }
 
   /**
@@ -298,6 +348,13 @@ export class DraftManager {
 
     const draftParent = draftCommit.parent?.[0];
     if (draftParent !== mainOid) {
+      const errorDetails = {
+        message: "Draft is out of date: main has new commits. Pull or merge before finalizing.",
+        mainOid,
+        draftOid,
+        draftParent,
+      };
+      this.#emit(DraftManagerEvents.conflict, errorDetails);
       throw new DraftConflictError();
     }
 
@@ -322,6 +379,7 @@ export class DraftManager {
     await fs.promises.flush();
     await git.checkout({ fs, dir, ref: DRAFT_BRANCH });
 
+    this.#emit(DraftManagerEvents.finalized);
     return newOid;
   }
 
@@ -430,6 +488,7 @@ export class DraftManager {
     await fs.promises.flush();
     await git.checkout({ fs, dir, ref: DRAFT_BRANCH });
     this.#currentThread = name;
+    this.#emit(DraftManagerEvents.threadSwitched);
   }
 
   /**
@@ -485,5 +544,124 @@ export class DraftManager {
    */
   async commitDraft(finalMessage: string): Promise<string> {
     return this.finalizeCommit(finalMessage);
+  }
+
+  /**
+   * Returns the full parsed document (content and metadata) at draft HEAD and main HEAD
+   * so the UI can present a visual diff when handling conflicts.
+   */
+  async getConflictState(): Promise<{
+    draft: { content: string; metadata: Record<string, unknown> };
+    main: { content: string; metadata: Record<string, unknown> };
+  }> {
+    await this.ensureDraftReady();
+    const { fs, dir } = this.#repo.getFsAndDir();
+
+    const decode = (data: Uint8Array): string => {
+      if (typeof TextDecoder !== "undefined") {
+        return new TextDecoder("utf-8").decode(data);
+      }
+      let result = "";
+      for (let i = 0; i < data.length; i += 1) {
+        result += String.fromCharCode(data[i]);
+      }
+      return result;
+    };
+
+    const readParsedAt = async (
+      oid: string
+    ): Promise<{ content: string; metadata: Record<string, unknown> }> => {
+      try {
+        const { blob } = await git.readBlob({
+          fs,
+          dir,
+          oid,
+          filepath: CONTENT_FILE,
+        });
+        const raw = decode(blob as Uint8Array);
+        if (raw && raw.length > 0) {
+          const parsed = parseDocument(raw);
+          return {
+            content: parsed.content ?? "",
+            metadata: parsed.metadata ?? {},
+          };
+        }
+      } catch {
+        // missing file at this ref
+      }
+      return { content: "", metadata: {} };
+    };
+
+    const mainOid = await git.resolveRef({ fs, dir, ref: MAIN_REF });
+    const draftOid = await git.resolveRef({ fs, dir, ref: DRAFT_REF });
+
+    const [main, draft] = await Promise.all([
+      readParsedAt(mainOid),
+      readParsedAt(draftOid),
+    ]);
+
+    return { draft, main };
+  }
+
+  /**
+   * Resolves a draft/main conflict.
+   * - 'keep-main': hard reset draft to main (wipes the draft).
+   * - 'keep-draft': create a new commit on main using the draft tree (or resolvedContent if provided), then point draft at that commit.
+   * Emits 'resolved' when complete.
+   */
+  async resolveConflict(
+    strategy: "keep-draft" | "keep-main",
+    resolvedContent?: string
+  ): Promise<void> {
+    await this.ensureDraftReady();
+    const { fs, dir } = this.#repo.getFsAndDir();
+
+    const mainOid = await git.resolveRef({ fs, dir, ref: MAIN_REF });
+    const draftOid = await git.resolveRef({ fs, dir, ref: DRAFT_REF });
+    const { commit: draftCommit } = await git.readCommit({
+      fs,
+      dir,
+      oid: draftOid,
+    });
+
+    if (strategy === "keep-main") {
+      await git.writeRef({ fs, dir, ref: DRAFT_REF, value: mainOid, force: true });
+      await fs.promises.flush();
+      await git.checkout({ fs, dir, ref: DRAFT_BRANCH });
+      this.#emit(DraftManagerEvents.resolved);
+      return;
+    }
+
+    // keep-draft
+    if (resolvedContent !== undefined) {
+      await fs.promises.writeFile(`${dir}${CONTENT_FILE}`, resolvedContent, {
+        encoding: "utf8",
+        mode: 0o666,
+      });
+      await git.add({ fs, dir, filepath: CONTENT_FILE });
+    }
+
+    const newOid = await git.commit({
+      fs,
+      dir,
+      ref: MAIN_REF,
+      message: "Resolve conflict (keep draft)",
+      parent: [mainOid],
+      tree: resolvedContent !== undefined ? undefined : draftCommit.tree,
+      author: DEFAULT_AUTHOR,
+      committer: DEFAULT_AUTHOR,
+    });
+
+    await git.writeRef({
+      fs,
+      dir,
+      ref: DRAFT_REF,
+      value: newOid,
+      force: true,
+    });
+    await fs.promises.flush();
+    await git.checkout({ fs, dir, ref: DRAFT_BRANCH });
+
+    this.#emit(DraftManagerEvents.resolved);
   }
 }

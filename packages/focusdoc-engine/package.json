@@ -12,8 +12,8 @@
     "@isomorphic-git/lightning-fs": "^4.6.2",
     "gray-matter": "^4.0.3",
     "isomorphic-git": "^1.26.0",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "nanoid": "^3.3.11"
   },
-  "devDependencies": {},
   "engines": {}
 }

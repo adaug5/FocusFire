@@ -25,6 +25,14 @@ function sanitizeStoreName(documentId: string): string {
   return documentId.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
+/**
+ * Returns the IndexedDB database name used by LightningFS for this documentId.
+ * Use for deleting the database when removing a document (e.g. in LibraryManager).
+ */
+export function getIndexedDBNameForDocument(documentId: string): string {
+  return `focusdoc-${sanitizeStoreName(documentId)}`;
+}
+
 export class GitRepository {
   readonly #documentId: string;
   #fs: FS | null = null;

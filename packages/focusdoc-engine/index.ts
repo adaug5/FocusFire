@@ -9,7 +9,8 @@ import { CONTENT_FILE } from "./git";
 import { parseDocument } from "./markdown";
 
 export { GitRepository } from "./git";
-export { DraftManager, DraftConflictError } from "./draft-manager";
+export { DraftManager, DraftConflictError, DraftManagerEvents } from "./draft-manager";
+export { LibraryManager, type LibraryDocument } from "./library-manager";
 export {
   parseDocument,
   stringifyDocument,
